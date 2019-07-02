@@ -9,7 +9,7 @@ import torch.utils.data
 from utils import CTCLabelConverter, AttnLabelConverter
 from dataset import RawDataset, AlignCollate
 from model import Model
-
+from predict import TextReader
 
 def demo(opt):
     """ model configuration """
@@ -52,32 +52,36 @@ def demo(opt):
         collate_fn=AlignCollate_demo, pin_memory=torch.cuda.is_available())
 
     # predict
-    model.eval()
+    # model.eval()
+    txtReader = TextReader(opt.__dict__)
+
     for image_tensors, image_path_list in demo_loader:
-        batch_size = image_tensors.size(0)
-        with torch.no_grad():
-            # image = image_tensors.cuda()
-            image = image_tensors.to(device)
-            # For max length prediction
-            length_for_pred = torch.IntTensor([opt.batch_max_length] * batch_size)
-            text_for_pred = torch.LongTensor(batch_size, opt.batch_max_length + 1).fill_(0)
+    
+        # batch_size = image_tensors.size(0)
+        # with torch.no_grad():
+        #     # image = image_tensors.cuda()
+        #     image = image_tensors.to(device)
+        #     # For max length prediction
+        #     length_for_pred = torch.IntTensor([opt.batch_max_length] * batch_size)
+        #     text_for_pred = torch.LongTensor(batch_size, opt.batch_max_length + 1).fill_(0)
 
-        if 'CTC' in opt.Prediction:
-            preds = model(image, text_for_pred).log_softmax(2)
+        # if 'CTC' in opt.Prediction:
+        #     preds = model(image, text_for_pred).log_softmax(2)
 
-            # Select max probabilty (greedy decoding) then decode index to character
-            preds_size = torch.IntTensor([preds.size(1)] * batch_size)
-            _, preds_index = preds.permute(1, 0, 2).max(2)
-            preds_index = preds_index.transpose(1, 0).contiguous().view(-1)
-            preds_str = converter.decode(preds_index.data, preds_size.data)
+        #     # Select max probabilty (greedy decoding) then decode index to character
+        #     preds_size = torch.IntTensor([preds.size(1)] * batch_size)
+        #     _, preds_index = preds.permute(1, 0, 2).max(2)
+        #     preds_index = preds_index.transpose(1, 0).contiguous().view(-1)
+        #     preds_str = converter.decode(preds_index.data, preds_size.data)
 
-        else:
-            preds = model(image, text_for_pred, is_train=False)
+        # else:
+        #     preds = model(image, text_for_pred, is_train=False)
 
-            # select max probabilty (greedy decoding) then decode index to character
-            _, preds_index = preds.max(2)
-            preds_str = converter.decode(preds_index, length_for_pred)
-
+        #     # select max probabilty (greedy decoding) then decode index to character
+        #     _, preds_index = preds.max(2)
+        #     preds_str = converter.decode(preds_index, length_for_pred)
+        
+        preds_str = txtReader.predict(image_tensors)
         print('-' * 80)
         print('image_path\tpredicted_labels')
         print('-' * 80)
@@ -86,6 +90,7 @@ def demo(opt):
                 pred = pred[:pred.find('[s]')]  # prune after "end of sentence" token ([s])
 
             print(f'{img_name}\t{pred}')
+
 
 
 if __name__ == '__main__':
@@ -122,5 +127,5 @@ if __name__ == '__main__':
     # cudnn.benchmark = True
     # cudnn.deterministic = True    
     opt.num_gpu = 0 if torch.cuda.is_available() else torch.cuda.device_count()
-
+   
     demo(opt)
