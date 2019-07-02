@@ -2,6 +2,7 @@ import string
 import argparse
 
 import torch
+import torch.nn as nn
 import torch.backends.cudnn as cudnn
 import torch.utils.data
 
@@ -25,13 +26,21 @@ def demo(opt):
           opt.hidden_size, opt.num_class, opt.batch_max_length, opt.Transformation, opt.FeatureExtraction,
           opt.SequenceModeling, opt.Prediction)
 
-    model = torch.nn.DataParallel(model)
+    # device = torch.device('cuda:0' if torch.cuda.is_avaliable() else 'cpu')
+
+    model = torch.nn.DataParallel(model)    
     if torch.cuda.is_available():
         model = model.cuda()
-
+        device = torch.device('cuda:0')
+    else:
+        device = torch.device('cpu')
+    
     # load model
     print('loading pretrained model from %s' % opt.saved_model)
-    model.load_state_dict(torch.load(opt.saved_model))
+    if torch.cuda.is_available():
+        model.load_state_dict(torch.load(opt.saved_model))
+    else:
+        model.load_state_dict(torch.load(opt.saved_model, map_location='cpu'))
 
     # prepare data. two demo images from https://github.com/bgshih/crnn#run-demo
     AlignCollate_demo = AlignCollate(imgH=opt.imgH, imgW=opt.imgW, keep_ratio_with_pad=opt.PAD)
@@ -40,17 +49,18 @@ def demo(opt):
         demo_data, batch_size=opt.batch_size,
         shuffle=False,
         num_workers=int(opt.workers),
-        collate_fn=AlignCollate_demo, pin_memory=True)
+        collate_fn=AlignCollate_demo, pin_memory=torch.cuda.is_available())
 
     # predict
     model.eval()
     for image_tensors, image_path_list in demo_loader:
         batch_size = image_tensors.size(0)
         with torch.no_grad():
-            image = image_tensors.cuda()
+            # image = image_tensors.cuda()
+            image = image_tensors.to(device)
             # For max length prediction
-            length_for_pred = torch.cuda.IntTensor([opt.batch_max_length] * batch_size)
-            text_for_pred = torch.cuda.LongTensor(batch_size, opt.batch_max_length + 1).fill_(0)
+            length_for_pred = torch.IntTensor([opt.batch_max_length] * batch_size)
+            text_for_pred = torch.LongTensor(batch_size, opt.batch_max_length + 1).fill_(0)
 
         if 'CTC' in opt.Prediction:
             preds = model(image, text_for_pred).log_softmax(2)
@@ -109,8 +119,8 @@ if __name__ == '__main__':
     if opt.sensitive:
         opt.character = string.printable[:-6]  # same with ASTER setting (use 94 char).
 
-    cudnn.benchmark = True
-    cudnn.deterministic = True
-    opt.num_gpu = torch.cuda.device_count()
+    # cudnn.benchmark = True
+    # cudnn.deterministic = True    
+    opt.num_gpu = 0 if torch.cuda.is_available() else torch.cuda.device_count()
 
     demo(opt)
