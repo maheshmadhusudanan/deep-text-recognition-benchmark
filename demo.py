@@ -9,7 +9,7 @@ import torch.utils.data
 from utils import CTCLabelConverter, AttnLabelConverter
 from dataset import RawDataset, AlignCollate
 from model import Model
-from predict import TextReader
+from text_reader import TextReader
 
 def demo(opt):
     """ model configuration """
