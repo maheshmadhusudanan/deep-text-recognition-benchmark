@@ -30,8 +30,9 @@ class TextReader(object):
         self.opts.imgH = args.get('imgH',32)  # the height of the input image
         self.opts.imgW = args.get('imgW',100) # #the width of the input image
         self.opts.rgb = args.get('rgb',True) # use rgb input
+        self.opts.character = args.get('character', '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~')
         self.opts.character = args.get('character','0123456789abcdefghijklmnopqrstuvwxyz') #character label
-        self.opts.sensitive = args.get('sensitive',False) #for sensitive character mode
+        self.opts.sensitive = args.get('sensitive',True) #for sensitive character mode
         self.opts.PAD = args.get('PAD',True) #whether to keep ratio then pad for image resize
         ## Model architecture
         self.opts.Transformation = args.get('Transformation','TPS') #Transformation stage. None|TPS
@@ -43,7 +44,7 @@ class TextReader(object):
         self.opts.output_channel = args.get('output_channel',512) #the number of output channel of Feature extractor
         self.opts.hidden_size = args.get('hidden_size',256) #the size of the LSTM hidden state
         self.opts.num_gpu = 0 if torch.cuda.is_available() else torch.cuda.device_count()
-        self.opts.saved_model = args.get('saved_model',dir_path+"/models/TPS-ResNet-BiLSTM-Attn.pth")
+        self.opts.saved_model = args.get('saved_model',dir_path+"/models/TPS-ResNet-BiLSTM-Attn-case-sensitive.pth")
 
         if self.opts.sensitive:
             self.opts.character = string.printable[:-6]  # same with ASTER setting (use 94 char).
@@ -82,14 +83,16 @@ class TextReader(object):
             self.trmodel.load_state_dict(torch.load(self.opts.saved_model))
         else:
             self.trmodel.load_state_dict(torch.load(self.opts.saved_model, map_location='cpu'))
+
+        self.trmodel.eval()
+
     
     ##
     ##
     ##    
     def predict(self,image_tensors):
 
-        print("############# About to predict****")
-        self.trmodel.eval()
+        print("############# About to predict for next batch ****")
         batch_size = image_tensors.size(0)
         with torch.no_grad():
             image = image_tensors.to(self.device)
@@ -112,13 +115,13 @@ class TextReader(object):
             _, preds_index = preds.max(2)
             preds_str = self.converter.decode(preds_index, length_for_pred)
 
-        print('-' * 80)
-        print('image_path\tpredicted_labels')
-        print('-' * 80)
-        pred = ""
-        for pred in preds_str:
-            if 'Attn' in self.opts.Prediction:
-                pred = pred[:pred.find('[s]')]  # prune after "end of sentence" token ([s])
-                print("predictions = "+pred)
+        # print('-' * 80)
+        # print('image_path\tpredicted_labels')
+        # print('-' * 80)
+        # pred = ""
+        # for pred in preds_str:
+            # if 'Attn' in self.opts.Prediction:
+                # pred = pred[:pred.find('[s]')]  # prune after "end of sentence" token ([s])
+                # print("predictions = "+pred)
         
         return preds_str
