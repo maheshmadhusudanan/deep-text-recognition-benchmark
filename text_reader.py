@@ -26,12 +26,13 @@ class TextReader(object):
         
         self.opts.workers = args.get("workers",5) # number of data loading workers
         ## data processing args
+        self.opts.batch_size = args.get('batch_size',50) #maximum-label-length
         self.opts.batch_max_length = args.get('batch_max_length',25) #maximum-label-length
         self.opts.imgH = args.get('imgH',32)  # the height of the input image
         self.opts.imgW = args.get('imgW',100) # #the width of the input image
-        self.opts.rgb = args.get('rgb',True) # use rgb input
+        self.opts.rgb = args.get('rgb',False) # use rgb input
         self.opts.character = args.get('character', '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~')
-        self.opts.character = args.get('character','0123456789abcdefghijklmnopqrstuvwxyz') #character label
+        #self.opts.character = args.get('character','0123456789abcdefghijklmnopqrstuvwxyz') #character label
         self.opts.sensitive = args.get('sensitive',True) #for sensitive character mode
         self.opts.PAD = args.get('PAD',True) #whether to keep ratio then pad for image resize
         ## Model architecture
@@ -56,7 +57,7 @@ class TextReader(object):
         self.opts.num_class = len(self.converter.character)
 
         if self.opts.rgb:
-            self.opts.input_channel = 1
+            self.opts.input_channel = 3
         
         self.pre_load_model()
                 
@@ -66,9 +67,10 @@ class TextReader(object):
     #
     def pre_load_model(self):
 
-        print("preloading the model with opts "+str(self.opts))
+        opt = self.opts        
+        print("preloading the model with opts "+str(opt))
         
-        self.trmodel = Model(self.opts)        
+        self.trmodel = Model(opt)        
 
         self.trmodel = torch.nn.DataParallel(self.trmodel)    
         if torch.cuda.is_available():
@@ -82,11 +84,37 @@ class TextReader(object):
         if torch.cuda.is_available():
             self.trmodel.load_state_dict(torch.load(self.opts.saved_model))
         else:
-            self.trmodel.load_state_dict(torch.load(self.opts.saved_model, map_location='cpu'))
+            self.trmodel.load_state_dict(torch.load(opt.saved_model, map_location='cpu'))
 
         self.trmodel.eval()
 
-    
+    #
+    #
+    #
+    def predictAllImagesInFolder(self, src_path):
+
+        opt = self.opts
+        AlignCollate_demo = AlignCollate(imgH=opt.imgH, imgW=opt.imgW, keep_ratio_with_pad=opt.PAD)
+        demo_data = RawDataset(root=src_path, opt=opt)  # use RawDataset
+        demo_loader = torch.utils.data.DataLoader(
+            demo_data, batch_size=opt.batch_size,
+            shuffle=False,
+            num_workers=int(opt.workers),
+            collate_fn=AlignCollate_demo, pin_memory=torch.cuda.is_available())
+
+        results = []               
+        for image_tensors, image_path_list in demo_loader:
+                    
+            preds_str = self.predict(image_tensors)
+            
+            for img_name, pred in zip(image_path_list, preds_str):
+                if 'Attn' in opt.Prediction:
+                    pred = pred[:pred.find('[s]')]  # prune after "end of sentence" token ([s])
+                results.append(f'{os.path.basename(img_name)},{pred}')
+        
+        return results
+                
+
     ##
     ##
     ##    
